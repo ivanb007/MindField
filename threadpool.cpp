@@ -1,5 +1,11 @@
 // threadpool.cpp
 
+// This file implements the ThreadPool class, defined in threadpool.h.
+// This class manages a pool of worker threads and a queue of tasks using thread, queue, mutex, and condition_variable.
+// The worker threads are initialized by the constructor, who then puts them in an endless loop while they wait for jobs to be enqueued.
+// It enhances performance by lowering the overhead of thread generation and destruction through thread reuse.
+// It allows tasks to be executed asynchronously, enabling parallel processing of tasks.
+
 #include "threadpool.h"
 
 // Constructor to initialize the thread pool with a given number of threads.

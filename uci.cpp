@@ -16,7 +16,7 @@ std::thread searchThread;
 int timeLimitMs = 1000;  // default 1 second per move
 
 void runUciLoop() {
-    GameState state = getInitialState();
+    BoardData board = getInitialBoard();
     std::string line;
 
     while (std::getline(std::cin, line)) {
@@ -31,7 +31,7 @@ void runUciLoop() {
         } else if (token == "isready") {
             std::cout << "readyok\n";
         } else if (token == "position") {
-            parsePosition(line, state);
+            parsePosition(line, board);
         } else if (token == "go") {
             stopSearch = false;
             timeLimitMs = 1000; // reset default
@@ -48,9 +48,9 @@ void runUciLoop() {
             }
 
             if (searchThread.joinable()) searchThread.join();
-            searchThread = std::thread([state]() {
+            searchThread = std::thread([board]() {
                 auto start = std::chrono::steady_clock::now();
-                Move bestMove = findBestMoveParallel(state, 4, timeLimitMs);
+                Move bestMove = findBestMoveParallel(board, 4, timeLimitMs);
                 auto end = std::chrono::steady_clock::now();
 
                 if (!stopSearch.load()) {

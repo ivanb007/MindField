@@ -5,7 +5,7 @@ project(
     VERSION 0.1.0 
     LANGUAGES C CXX)
 
-add_executable(MindField engine.cpp main.cpp search.cpp threadpool.cpp uci.cpp)
+add_executable(MindField engine.cpp evaluate.cpp main.cpp search.cpp threadpool.cpp uci.cpp)
 
 include(CTest)
 enable_testing()

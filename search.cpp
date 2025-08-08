@@ -2,51 +2,81 @@
 
 #include "search.h"
 #include "threadpool.h"
+
 #include <limits>
 
 const int INF = std::numeric_limits<int>::max();
 
-int evaluate(const GameState& state) {
-    int score = 0;
-    for (char c : state.board) {
-        if (c == '.') continue;
-        int val;
-        switch (tolower(c)) {
-            case 'p': val = 10; break;
-            case 'n': case 'b': val = 30; break;
-            case 'r': val = 50; break;
-            case 'q': val = 90; break;
-            case 'k': val = 900; break;
-            default: val = 0;
-        }
-        score += isupper(c) ? val : -val;
-    }
-    return score;
-}
-
-GameState applyMove(GameState state, Move m) {
-    state.board[m.to] = state.board[m.from];
-    state.board[m.from] = '.';
-    state.whiteToMove = !state.whiteToMove;
-    return state;
-}
-
-std::vector<Move> generateMoves(const GameState& state) {
-    // Placeholder for real move generation
+std::vector<Move> generateMoves(const BoardData& board) {
     std::vector<Move> moves;
-    for (int i = 0; i < 64; ++i) {
-        if ((state.whiteToMove && isupper(state.board[i])) ||
-            (!state.whiteToMove && islower(state.board[i]))) {
-            int row = i / 8, col = i % 8;
-            if (col + 1 < 8) moves.push_back({i, i + 1});
-        }
-    }
+    int i, j, n;
+    int side;
+    if (board.whiteToMove) side = WHITE;
+    else side = BLACK;
+    int xside = side == WHITE ? BLACK : WHITE;
+
+    for (i = 0; i < 64; ++i)
+		if (board.color[i] == side) {
+			if (board.piece[i] == PAWN) {
+				if (side == WHITE) {
+					if (COL(i) != 0 && board.color[i - 9] == BLACK)
+						moves.push_back({i, i - 9, 0, 17});
+					if (COL(i) != 7 && board.color[i - 7] == BLACK)
+						moves.push_back({i, i - 7, 0, 17});
+					if (board.color[i - 8] == EMPTY) {
+						moves.push_back({i, i - 8, 0, 16});
+						if (i >= 48 && board.color[i - 16] == EMPTY)
+							moves.push_back({i, i - 16, 0, 24});
+					}
+				}
+				else {
+					if (COL(i) != 0 && board.color[i + 7] == WHITE)
+						moves.push_back({i, i + 7, 0, 17});
+					if (COL(i) != 7 && board.color[i + 9] == WHITE)
+						moves.push_back({i, i + 9, 0, 17});
+					if (board.color[i + 8] == EMPTY) {
+						moves.push_back({i, i + 8, 0, 16});
+						if (i <= 15 && board.color[i + 16] == EMPTY)
+							moves.push_back({i, i + 16, 0, 24});
+					}
+				}
+			}
+			else
+				for (j = 0; j < offsets[board.piece[i]]; ++j)
+					for (n = i;;) {
+						n = mailbox[mailbox64[n] + offset[board.piece[i]][j]];
+						if (n == -1)
+							break;
+						if (board.color[n] != EMPTY) {
+							if (board.color[n] == xside)
+								moves.push_back({i, n, 0, 1});
+							break;
+						}
+						if (!slide[board.piece[i]])
+							break;
+					}
+		}
+	if (board.ep != -1) {
+        int ep = board.ep;
+		if (side == WHITE) {
+			if (COL(ep) != 0 && board.color[ep + 7] == WHITE && board.piece[ep + 7] == PAWN)
+				moves.push_back({ep + 7, ep, 0, 21});
+			if (COL(ep) != 7 && board.color[ep + 9] == WHITE && board.piece[ep + 9] == PAWN)
+				moves.push_back({ep + 9, ep, 0, 21});
+		}
+		else {
+			if (COL(ep) != 0 && board.color[ep - 9] == BLACK && board.piece[ep - 9] == PAWN)
+				moves.push_back({ep - 9, ep, 0, 21});
+			if (COL(ep) != 7 && board.color[ep - 7] == BLACK && board.piece[ep - 7] == PAWN)
+				moves.push_back({ep - 7, ep, 0, 21});
+		}
+	}
     return moves;
 }
 
-Move findBestMoveParallel(GameState state, int depth, int timeLimitMs) {
-    auto moves = generateMoves(state);
-    if (moves.empty()) return {0, 0}; // No moves available
+Move findBestMoveParallel(BoardData board, int depth, int timeLimitMs) {
+    auto moves = generateMoves(board);
+    if (moves.empty()) return {0, 0, 0, 0}; // No moves available
     if (moves.size() == 1) return moves[0]; // Only one move available return it
     if (depth < 1) depth = 1; // Ensure depth is at least 1
     if (timeLimitMs < 100) timeLimitMs = 100; // Ensure time limit is at least 100ms
@@ -56,8 +86,8 @@ Move findBestMoveParallel(GameState state, int depth, int timeLimitMs) {
         int bestScore = -INF;
         Move bestMove = moves[0];
         for (const auto& m : moves) {
-            GameState nextState = applyMove(state, m);
-            int score = evaluate(nextState);
+            BoardData nextBoard = applyMove(board, m);
+            int score = evaluate(nextBoard);
             if (score > bestScore) {
                 bestScore = score;
                 bestMove = m;
@@ -68,9 +98,10 @@ Move findBestMoveParallel(GameState state, int depth, int timeLimitMs) {
 
     // Create a thread pool with the number of threads equal to the number of available cores.
     ThreadPool pool(std::thread::hardware_concurrency());
-    // Vector to hold futures for the results of each task.
+    // Create vector to hold futures for the results of each task.
     std::vector<std::future<int>> futures;
-    // Atomic flag to stop the search if time limit is reached.
+
+    // Create atomic flag to stop the search if time limit is reached.
     std::atomic<bool> localStop(false);
     // Set the deadline for the search based on the time limit.
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeLimitMs);
@@ -78,10 +109,9 @@ Move findBestMoveParallel(GameState state, int depth, int timeLimitMs) {
     // Enqueue tasks for each move and collect futures.
     // This allows us to run the alphabeta search in parallel for each move.
     for (const auto& m : moves) {
-        GameState next = applyMove(state, m);
-        auto localStopPtr = &localStop;
-        futures.emplace_back(pool.enqueue([=]() {
-            return alphabetaTimed(next, depth - 1, -INF, INF, false, deadline, *localStopPtr);
+        BoardData nextBoard = applyMove(board, m);
+        futures.emplace_back(pool.enqueue([=, &localStop]() {
+            return alphabetaTimed(nextBoard, depth - 1, -INF, INF, false, deadline, localStop);
         }));
     }
 
@@ -107,18 +137,18 @@ Move findBestMoveParallel(GameState state, int depth, int timeLimitMs) {
     return bestMove;
 }
 
-int alphabetaTimed(GameState state, int depth, int alpha, int beta, bool maximizing, std::chrono::steady_clock::time_point deadline, std::atomic<bool>& stop) {
+int alphabetaTimed(BoardData board, int depth, int alpha, int beta, bool maximizing, std::chrono::steady_clock::time_point deadline, std::atomic<bool>& stop) {
     if (stop.load() || std::chrono::steady_clock::now() > deadline) return 0;
-    if (depth == 0) return evaluate(state);
+    if (depth == 0) return evaluate(board);
 
-    auto moves = generateMoves(state);
-    if (moves.empty()) return evaluate(state);
+    auto moves = generateMoves(board);
+    if (moves.empty()) return evaluate(board);
 
     if (maximizing) {
         int maxEval = -INF;
         for (auto& m : moves) {
-            GameState newState = applyMove(state, m);
-            int eval = alphabetaTimed(newState, depth - 1, alpha, beta, false, deadline, stop);
+            BoardData newBoard = applyMove(board, m);
+            int eval = alphabetaTimed(newBoard, depth - 1, alpha, beta, false, deadline, stop);
             maxEval = std::max(maxEval, eval);
             alpha = std::max(alpha, eval);
             if (beta <= alpha) break;
@@ -127,8 +157,8 @@ int alphabetaTimed(GameState state, int depth, int alpha, int beta, bool maximiz
     } else {
         int minEval = INF;
         for (auto& m : moves) {
-            GameState newState = applyMove(state, m);
-            int eval = alphabetaTimed(newState, depth - 1, alpha, beta, true, deadline, stop);
+            BoardData newBoard = applyMove(board, m);
+            int eval = alphabetaTimed(newBoard, depth - 1, alpha, beta, true, deadline, stop);
             minEval = std::min(minEval, eval);
             beta = std::min(beta, eval);
             if (beta <= alpha) break;

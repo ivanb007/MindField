@@ -11,8 +11,7 @@
 #include <future>
 
 
-int evaluate(const GameState& state);
-GameState applyMove(GameState state, Move m);
-std::vector<Move> generateMoves(const GameState& state);
-Move findBestMoveParallel(GameState state, int depth, int timeLimitMs);
-int alphabetaTimed(GameState state, int depth, int alpha, int beta, bool maximizing, std::chrono::steady_clock::time_point deadline, std::atomic<bool>& stop);
+int evaluate(const BoardData& board);
+std::vector<Move> generateMoves(const BoardData& board);
+Move findBestMoveParallel(BoardData board, int depth, int timeLimitMs);
+int alphabetaTimed(BoardData board, int depth, int alpha, int beta, bool maximizing, std::chrono::steady_clock::time_point deadline, std::atomic<bool>& stop);
